@@ -1,0 +1,162 @@
+#!/usr/bin/env python3
+
+# Copyright 2024 Richard Mortier <mort@cantab.net>
+# SPDX-License-Identifier: BSD-3-Clause
+
+import asyncio
+import csv
+import logging
+import os
+import re
+import sys
+import typing
+
+import click
+import httpx
+import tomllib
+from bs4 import BeautifulSoup, Tag, ResultSet
+from rich.logging import RichHandler
+
+logging.basicConfig(format="%(message)s", datefmt="[%X]", handlers=[RichHandler()])
+log = logging.getLogger(__name__)
+
+
+def fail(s: str, n: int = -1) -> None:
+    log.critical(s)
+    sys.exit(n)
+
+
+async def get(
+    url: httpx.URL, headers: dict = {}, params: dict = {}, auth=None
+) -> BeautifulSoup:
+    async with httpx.AsyncClient() as session:
+        while True:
+            try:
+                response = await session.get(
+                    url,
+                    headers=headers,
+                    params=params,
+                    auth=auth,
+                    timeout=20.0,
+                    follow_redirects=True,
+                )
+                break
+            except httpx.ReadTimeout:
+                log.warn("httpx.ReadTimeout: retrying")
+        log.debug(f"get: {response=}")
+        page = response.text
+        match response.status_code:
+            case 200:
+                log.debug(f"get: {page=}")
+                return BeautifulSoup(page, "lxml")
+            case _:
+                log.debug(f"get: {response=}")
+                fail(f"get: {response.status_code=} {page=}")
+    assert False
+    return {}  # unreached
+
+
+def siblings(soup: BeautifulSoup, tag: str, labels: list[str], stop: str) -> list[Tag] | ResultSet[Tag]:
+    t = None
+    for label in labels:
+        t = soup.find(tag, string=re.compile(label))
+        if t:
+            break
+
+    log.debug(f"{t=}")
+    if not t:
+        return []
+
+    siblings = []
+    while True:
+        next = t.find_next_sibling()
+        log.debug(f"{next=}")
+        if not next or next.name == stop:
+            break
+        siblings.append(next)
+        t = next
+    return siblings
+
+
+def extractentries(
+    stream: str, course: str, entries: list[Tag] | ResultSet[Tag]
+) -> list[dict[str, str]]:
+    cleanentries = re.split(
+        "[.?] ",
+        ". ".join(
+            map(
+                lambda e: " ".join(e.text.replace("\n", " ").split()),
+                entries,
+            )
+        ),
+    )
+    return [
+        {"stream": stream, "course": course, "entry": e.strip()}
+        for e in cleanentries
+        if len(e) > 0
+    ]
+
+
+def tsvwrite(filename: str, fieldnames: list[str], rows: list[dict[str, str]]):
+    with open(filename, "at") as tsvf:
+        tsvw = csv.DictWriter(
+            tsvf,
+            fieldnames=fieldnames,
+            extrasaction="raise",
+            delimiter="\t",
+            dialect="excel",
+        )
+        if tsvf.tell() == 0:
+            tsvw.writeheader()
+
+        for row in rows:
+            tsvw.writerow(row)
+
+
+async def main(config: dict[str, typing.Any]) -> None:
+    baseurl = config["baseurl"]
+    for stream, courses in config["streams"].items():
+        for course in courses:
+            log.info(f"{stream=} {course=}")
+
+            url = httpx.URL(os.path.join(baseurl, course))
+            soup = await get(url)
+            log.debug(soup)
+
+            syllabus = siblings(soup, "h2", ["Lecture.*", "Topics", "Syllabus"], "h2")[0].select("li")
+            
+            log.debug(f"{len(syllabus)=} {syllabus=}")
+            syllabus = extractentries(stream, course, syllabus)
+            tsvwrite("syllabus.tsv", ["stream", "course", "entry"], syllabus)
+
+            objectives = siblings(soup, "h2", ["Objectives"], "h2")
+            log.debug(f"{len(objectives)=} {objectives=}")
+            if len(objectives) > 1:
+                objectives = objectives[1].select("li")
+            log.debug(f"{len(objectives)=} {objectives=}")
+            objectives = extractentries(stream, course, objectives)
+            tsvwrite("objectives.tsv", ["stream", "course", "entry"], objectives)
+
+
+@click.command()
+@click.option("-l", "--loglevel", default="INFO", help="Set log level.")
+@click.option(
+    "-c",
+    "--config",
+    "configfile",
+    default="cl-syllabus.toml",
+    help="Specify TOML config file.",
+)
+def cli(
+    configfile: str,
+    loglevel: str,
+):
+    logging.getLogger().setLevel(loglevel.upper())
+    with open(configfile, "rb") as f:
+        config = tomllib.load(f)
+        log.debug(f"{config=}")
+        asyncio.run(main(config))
+
+
+if __name__ == "__main__":
+    cli()

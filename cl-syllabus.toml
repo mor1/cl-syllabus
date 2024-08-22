@@ -1,0 +1,40 @@
+baseurl = "https://www.cl.cam.ac.uk/teaching/2324"
+
+[streams]
+algorithms = ["Algorithm1", "Algorithm2", "ArtInt"]
+datascience = ["SciComp", "DataSci", "MLRD", "IntroProb"]
+people = [
+    "Graphics",
+    "EconLaw",
+    "FGraphics",
+    "FHCI",
+    "IntDesign",
+    # "SWSecEng", # objectives is paragraph without h2 separator
+]
+programming = [
+    "Databases",
+    "FoundsCS",
+    "OOProg",
+    # "FJava", # objectives is inline paragraph, no h2 separator; no syllabus
+    "ProgC",
+    "Prolog",
+    "ConceptsPL",
+]
+systems = [
+    "UnixTools",
+    "DigElec",
+    "ConcDisSys",
+    "IntComArch",
+    "OpSystems",
+    "CompNet",
+    # "CySecurity", # no objectives; syllabus is <br> separated single ul>li
+]
+theory = [
+    "CompConstr",
+    "DiscMath",
+    "Semantics",
+    "CompTheory",
+    "LogicProof",
+    "Complexity",
+    "ForModLang",
+]
