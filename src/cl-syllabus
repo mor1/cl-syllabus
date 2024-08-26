@@ -124,7 +124,6 @@ async def main(config: dict[str, typing.Any]) -> None:
             log.debug(soup)
 
             syllabus = siblings(soup, "h2", ["Lecture.*", "Topics", "Syllabus"], "h2")[0].select("li")
-            
             log.debug(f"{len(syllabus)=} {syllabus=}")
             syllabus = extractentries(stream, course, syllabus)
             tsvwrite("syllabus.tsv", ["stream", "course", "entry"], syllabus)
